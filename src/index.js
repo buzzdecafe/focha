@@ -7,7 +7,7 @@ const la = require('lazy-ass')
 const is = require('check-more-types')
 const chalk = require('chalk')
 const {Maybe} = require('ramda-fantasy')
-const {prop} = require('ramda')
+const {is, prop} = require('ramda')
 const pluralize = require('pluralize')
 
 const order = require('./order-of-tests')
@@ -17,32 +17,39 @@ la(is.object(cache), 'missing test order object')
 const {join} = require('path')
 const pkg = require(join(__dirname, '../package.json'))
 
+function getSpecs(options) {
+  if (!options.spec) {
+    console.error('Missing spec file pattern')
+    process.exit(-1)
+  }
+
+  const specFilenames = is(String, specFilenames) ? options.spec : [options.spec];
+  specFilenames.forEach(sf => mocha.addFile(sf));
+  return specFilenames;
+}
+
 function focha (options) {
   options = options || {}
 
   log('starting focha with options')
   log(JSON.stringify(options, null, 2))
 
-  var specFilenames = options.spec
-  if (!specFilenames) {
-    console.error('Missing spec file pattern')
-    process.exit(-1)
-  }
+  const prevFailingTests = options.all ? Promise.resolve(undefined)
+    : cache.load().then(
+      resp => {
 
-  if (typeof specFilenames === 'string') {
-    specFilenames = [specFilenames]
-  }
-
-  const prevFailingTests = options.all ? undefined : cache.load()
-  if (!prevFailingTests && !options.all) {
-    console.log('😃 no previously failing tests found')
-    console.log('ℹ️ run all tests using --all flag')
-    return
-  }
+      },
+      err => {
+        if (!options.all) {
+          console.log('😃 no previously failing tests found')
+          console.log('ℹ️ run all tests using --all flag')
+          throw err;
+        }
+      }
+    )
 
   const failedTests = []
 
-  specFilenames.forEach(mocha.addFile.bind(mocha))
 
   const wasRunningJustFailingTests = () =>
     Maybe.toMaybe(is.unemptyArray(prevFailingTests)
@@ -73,7 +80,7 @@ function focha (options) {
         log('there were no failures in this run')
         cache.clear()
         numberOfPreviouslyFailingTests()
-          .map(n => {
+          .forEach(n => {
             console.log('🤔 previously %s failed', pluralize('test', n, true))
             console.log('✅ now everything is fine')
           })
